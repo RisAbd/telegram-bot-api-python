@@ -3,10 +3,20 @@
 ```python
 from main import *
 
-bot = Bot.by(TOKEN)
-print(bot.webhookinfo())
-print(bot.updates())
+bot = Bot.by(BOT_API_TOKEN)
+print(bot)
 
-bot.send_chat_action(chat_id, Chat.ACTION.TYPING)
-bot.send_message(chat=chat_id, text='_lel_ *kek* `xd`', parse_mode=Message.ParseMode.MARKDOWN)
+webhookinfo = bot.webhookinfo()
+print(webhookinfo)
+
+updates = bot.updates()
+u = updates[0]
+print(u)
+
+action_sent = bot.send_chat_action(u.message.chat, Chat.Action.TYPING)
+time.sleep(0.5)
+
+sent_message = bot.send_message(chat=u.message.chat, text='*lel* _kek_ `xd`', parse_mode=Message.ParseMode.MARKDOWN)
+print(sent_message)
+
 ```
