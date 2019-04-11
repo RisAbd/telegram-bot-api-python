@@ -8,11 +8,16 @@ import enum
 import time
 from datetime import datetime
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 # UTILS
 
 def _from(cls, result: T.Union[list, dict], many=False, **kwargs):
     converter_map = getattr(cls, 'converter_map', {})
+    # logger.debug('cls=%r, many=%r: %r', cls, many, result)
     if many:
         return list(map(FT.partial(cls.from_, many=False), result))
     return cls(**{converter_map.get(k, k): v for k, v in result.items() if converter_map.get(k) is not False}, **kwargs)
@@ -27,9 +32,6 @@ def from_added(cls):
 @from_added
 class ConverterMixin:
     pass
-
-
-BOT_API_TOKEN = config('BOT_API_TOKEN', cast=str)
 
 
 class Api:
@@ -104,9 +106,9 @@ class Bot(User):
 
     def request(self, method, url_builder, _verbose=False, **kwargs):
         r = requests.request(method, url_builder(token=self._api_token), **kwargs)
-        if _verbose: print(r)
+        logger.debug('%r', r)
         j = r.json()
-        if _verbose: print(j)
+        logger.debug('%r', j)
         if not j['ok']:
             Error.from_(j).raise_()
         return j['result']
@@ -221,6 +223,12 @@ class Update(ConverterMixin):
 
 
 def main():
+    BOT_API_TOKEN = config('BOT_API_TOKEN', cast=str)
+    LOGLEVEL = config('LOGLEVEL', cast=str, default='INFO')
+
+    logger.level = getattr(logging, LOGLEVEL, logging.INFO)
+    logging.basicConfig()
+
     bot = Bot.by(BOT_API_TOKEN)
 
     webhookinfo = bot.webhookinfo()
