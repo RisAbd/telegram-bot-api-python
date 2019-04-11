@@ -36,10 +36,10 @@ class Api:
     HOST = 'https://api.telegram.org'
     BOT = '/bot{token}'
 
-    ME = '/getme'
-    UPDATES = '/getupdates'
-    WEBHOOK_INFO = '/getwebhookinfo'
-    SEND_MESSAGE = '/sendmessage'
+    ME = '/getMe'
+    UPDATES = '/getUpdates'
+    WEBHOOK_INFO = '/getWebhookInfo'
+    SEND_MESSAGE = '/sendMessage'
     SEND_CHAT_ACTION = '/sendChatAction'
 
     def _api(api):
