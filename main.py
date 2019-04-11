@@ -43,6 +43,7 @@ class Api:
     WEBHOOK_INFO = '/getWebhookInfo'
     SEND_MESSAGE = '/sendMessage'
     SEND_CHAT_ACTION = '/sendChatAction'
+    SEND_DOCUMENT = '/sendDocument'
 
     def _api(api):
         return classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
@@ -52,6 +53,7 @@ class Api:
     webhookinfo = _api(WEBHOOK_INFO)
     send_message = _api(SEND_MESSAGE)
     send_chat_action = _api(SEND_CHAT_ACTION)
+    send_document = _api(SEND_DOCUMENT)
 
 
 class BaseAPIException(BaseException):
@@ -171,6 +173,50 @@ class Bot(User):
         res = self.post(Api.send_chat_action, json=dict(chat_id=chat, action=action.value))
         return res
 
+    @_chat_argument_transformed_to_id(1, 'chat')
+    def send_document(self, chat: T.Union['Chat', int], document, 
+                      caption=None, thumb=None, 
+                      parse_mode=None, disable_web_page_preview=None,
+                      disable_notification=None,
+                      reply_to_message_id=None,
+                      reply_markup=None,
+                      ) -> 'Message':
+
+        data = self._remove_nones(chat_id=chat, caption=caption,
+                                  parse_mode=parse_mode and parse_mode.value,
+                                  disable_web_page_preview=disable_web_page_preview,
+                                  disable_notification=disable_notification,
+                                  reply_to_message_id=reply_to_message_id,
+                                  reply_markup=reply_markup,
+                                  )
+        files = None
+        if isinstance(document, str):
+            data['document'] = document
+        else:
+            files = dict(document=document)
+
+        res = self.post(Api.send_document, data=data, files=files)
+        return Message.from_(res) 
+
+
+@attr.s
+class PhotoSize(ConverterMixin):
+    file_id = attr.ib()
+    width = attr.ib()
+    height = attr.ib()
+    file_size = attr.ib(default=None)
+
+Thumb = PhotoSize
+
+
+@attr.s
+class Document(ConverterMixin):
+    file_id = attr.ib()
+    thumb = attr.ib(default=None, converter=attr.converters.optional(Thumb.converter))
+    file_name = attr.ib(default=None)
+    mime_type = attr.ib(default=None)
+    file_size = attr.ib(default=None)
+
 
 @attr.s
 class Chat(ConverterMixin):
@@ -256,6 +302,18 @@ def main():
     time.sleep(0.5)
     sent_message = bot.send_message(chat=u.message.chat, text='*lel* _kek_ `xd`', parse_mode=Message.ParseMode.MARKDOWN)
     print(sent_message
+
+    # import io
+    # with io.BytesIO(b'some content file') as f:
+    #     f.name = 'kek.txt'
+
+    message_with_doc = bot.send_document(chat=u.message.chat, document='BQADBAADmQAD17aEUaCF8A1RHZMnAg', 
+                                         caption='hey see my _*document*_ here',
+                                         parse_mode=Message.ParseMode.MARKDOWN,
+                                         reply_to_message_id=u.message.id,
+                                         )
+
+    print(message_with_doc)
 
 
 if __name__ == '__main__':
