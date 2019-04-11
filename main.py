@@ -251,7 +251,6 @@ class MessageEntity(ConverterMixin):
     user = attr.ib(default=None)
 
 
-@attr.s
 class Message(ConverterMixin):
     converter_map = {'message_id': 'id', 'from': 'from_', }
 
@@ -259,12 +258,23 @@ class Message(ConverterMixin):
     date = attr.ib(converter=datetime.fromtimestamp)
     chat = attr.ib(converter=Chat.converter)
     text = attr.ib(default=None)
-    from_ = attr.ib(default=None, converter=User.converter)
+    from_ = attr.ib(default=None, converter=attr.converters.optional(User.converter))
     entities = attr.ib(factory=list, converter=MessageEntity.list)
+    
+    caption = attr.ib(default=None)
+    caption_entities = attr.ib(factory=list, converter=MessageEntity.list)
+
+    document = attr.ib(default=None, converter=attr.converters.optional(Document.converter))
+
 
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
         HTML = 'HTML'
+
+# workaround self referencing converter
+# reply_to_message is Message
+Message.reply_to_message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
+Message = attr.s(Message)
 
 
 @attr.s
