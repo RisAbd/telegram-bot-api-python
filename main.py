@@ -6,6 +6,7 @@ import attr
 import functools as FT, itertools as IT, typing as T
 import enum
 import time
+from datetime import datetime
 
 
 # UTILS
@@ -192,7 +193,7 @@ class Message(ConverterMixin):
     converter_map = {'message_id': 'id', 'from': 'from_', }
 
     id = attr.ib()
-    date = attr.ib()
+    date = attr.ib(converter=datetime.fromtimestamp)
     chat = attr.ib(converter=Chat.converter)
     text = attr.ib(default=None)
     from_ = attr.ib(default=None, converter=User.converter)
