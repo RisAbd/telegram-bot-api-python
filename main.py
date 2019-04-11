@@ -128,21 +128,35 @@ class Bot(User):
         res = self.get(Api.updates)
         return Update.from_(res, many=True)
 
-    def _chat_id(self, chat):
-        assert isinstance(chat, (Chat, int))
-        return chat.id if isinstance(chat, Chat) else chat
+    # def _chat_id(self, chat) -> int:
+    #     assert isinstance(chat, (Chat, int))
+    #     return chat.id if isinstance(chat, Chat) else chat
 
     def _remove_nones(self, data: dict = (), **kwargs) -> dict:
         return {k: v for k, v in dict(data, **kwargs).items() if v is not None}
 
-    def send_message(self, chat, text, 
+    def _chat_argument_transformed_to_id(*lookup: T.List[T.Union[int, str]]):
+        lookup_args = set(l for l in lookup if isinstance(l, int))
+        lookup_kwargs = set(l for l in lookup if isinstance(l, str))
+        def wow(f):
+            tr = lambda chat: chat.id if isinstance(chat, Chat) else chat
+            @FT.wraps(f)
+            def wrapper(*args, **kwargs):
+                args = tuple((tr(a) if (not lookup_args or i in lookup_args) else a) for i, a in enumerate(args))
+                kwargs = {k: (tr(v) if (not lookup_kwargs or k in lookup_kwargs) else v) for k, v in kwargs.items()}
+                return f(*args, **kwargs)
+            return wrapper
+        return wow
+    
+    @_chat_argument_transformed_to_id(1, 'chat')
+    def send_message(self, chat: T.Union['Chat', int], text, 
                      parse_mode=None, disable_web_page_preview=None,
                      disable_notification=None,
                      reply_to_message_id=None,
                      reply_markup=None,
                      ) -> 'Message':
 
-        data = self._remove_nones(chat_id=self._chat_id(chat), text=text, 
+        data = self._remove_nones(chat_id=chat, text=text, 
                                   parse_mode=parse_mode and parse_mode.value,
                                   disable_web_page_preview=disable_web_page_preview,
                                   disable_notification=disable_notification,
@@ -152,8 +166,9 @@ class Bot(User):
         res = self.post(Api.send_message, json=data)
         return Message.from_(res)
 
-    def send_chat_action(self, chat: 'Chat', action: 'Chat.Action'):
-        res = self.post(Api.send_chat_action, json=dict(chat_id=self._chat_id(chat), action=action.value))
+    @_chat_argument_transformed_to_id()
+    def send_chat_action(self, chat: T.Union['Chat', int], action: 'Chat.Action') -> bool:
+        res = self.post(Api.send_chat_action, json=dict(chat_id=chat, action=action.value))
         return res
 
 
