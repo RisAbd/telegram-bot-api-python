@@ -14,7 +14,7 @@ def _from(cls, result: T.Union[list, dict], many=False, **kwargs):
     converter_map = getattr(cls, 'converter_map', {})
     if many:
         return list(map(FT.partial(cls.from_, many=False), result))
-    return cls(**{converter_map.get(k, k): v for k, v in result.items()}, **kwargs)
+    return cls(**{converter_map.get(k, k): v for k, v in result.items() if converter_map.get(k) is not False}, **kwargs)
 
 
 def from_added(cls):
@@ -49,6 +49,26 @@ class Api:
     webhookinfo = _api(WEBHOOK_INFO)
     send_message = _api(SEND_MESSAGE)
     send_chat_action = _api(SEND_CHAT_ACTION)
+
+
+class BaseAPIException(BaseException):
+    pass
+
+
+class APIException(BaseAPIException):
+    pass
+
+
+@attr.s
+class Error(ConverterMixin):
+    converter_map = dict(ok=False)
+
+    description = attr.ib()
+    error_code = attr.ib()
+    parameters = attr.ib(default=None)
+
+    def raise_(self):
+        raise APIException(self)
 
 
 @attr.s
@@ -86,6 +106,8 @@ class Bot(User):
         if _verbose: print(r)
         j = r.json()
         if _verbose: print(j)
+        if not j['ok']:
+            Error.from_(j).raise_()
         return j['result']
 
     def get(self, url_builder, **kwargs):
