@@ -120,11 +120,11 @@ class Bot(User):
         return self.request('post', url_builder, **kwargs)
 
     @FT.lru_cache(1)
-    def webhookinfo(self):
+    def webhookinfo(self) -> 'WebhookInfo':
         res = self.get(Api.webhookinfo)
         return WebhookInfo.from_(res)
 
-    def updates(self):
+    def updates(self) -> T.List['Update']:
         res = self.get(Api.updates)
         return Update.from_(res, many=True)
 
@@ -132,7 +132,7 @@ class Bot(User):
         assert isinstance(chat, (Chat, int))
         return chat.id if isinstance(chat, Chat) else chat
 
-    def _remove_nones(self, data: dict = (), **kwargs):
+    def _remove_nones(self, data: dict = (), **kwargs) -> dict:
         return {k: v for k, v in dict(data, **kwargs).items() if v is not None}
 
     def send_message(self, chat, text, 
@@ -140,7 +140,7 @@ class Bot(User):
                      disable_notification=None,
                      reply_to_message_id=None,
                      reply_markup=None,
-                     ):
+                     ) -> 'Message':
 
         data = self._remove_nones(chat_id=self._chat_id(chat), text=text, 
                                   parse_mode=parse_mode and parse_mode.value,
