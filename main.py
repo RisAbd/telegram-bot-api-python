@@ -3,7 +3,7 @@
 import requests
 from decouple import config
 import attr
-import functools as FT, itertools as IT, typing as T
+import functools as FT, itertools as IT, typing as T, operator as OP
 import enum
 import time
 from datetime import datetime
@@ -258,6 +258,7 @@ class Message(ConverterMixin):
     date = attr.ib(converter=datetime.fromtimestamp)
     chat = attr.ib(converter=Chat.converter)
     text = attr.ib(default=None)
+    edit_date = attr.ib(default=None, converter=attr.converters.optional(datetime.fromtimestamp))
     from_ = attr.ib(default=None, converter=attr.converters.optional(User.converter))
     entities = attr.ib(factory=list, converter=MessageEntity.list)
     
@@ -283,7 +284,7 @@ class Update(ConverterMixin):
 
     id = attr.ib()
     message = attr.ib(default=None, converter=Message.converter)
-    edited_message = attr.ib(default=None)
+    edited_message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
     channel_post = attr.ib(default=None)
     edited_channel_post = attr.ib(default=None)
     inline_query = attr.ib(default=None)
