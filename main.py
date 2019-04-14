@@ -121,6 +121,58 @@ class Bot(User):
     def post(self, url_builder, **kwargs):
         return self.request('post', url_builder, **kwargs)
 
+    def _prepare_value(self, value: T.Any, 
+                       remove_none_values=True, 
+                       transform_types_to_ids: T.Dict[type, str] = None,
+                       values_instead_of_enums=True,
+                       update_type_to_id_with_inc=True,
+                       _depth=0,
+                       _max_depth=None,
+                       _raise_recursion_error=False,
+                       ) -> dict:
+
+        if transform_types_to_ids is None:
+            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', Document: 'file_id'}
+
+        if _depth >= (_max_depth or float('inf')):
+            if _raise_recursion_error:
+                raise RecursionError()
+            else:
+                return value
+
+        vtype = type(value)
+
+        if isinstance(value, Update) and update_type_to_id_with_inc:
+            return value.id + 1
+        elif isinstance(value, enum.Enum) and values_instead_of_enums:
+            return value.value
+        elif vtype in transform_types_to_ids:
+            return getattr(value, transform_types_to_ids[vtype])
+        elif isinstance(value, (list, tuple)):
+            return [
+                self._prepare_value(v, remove_none_values=remove_none_values, 
+                                    transform_types_to_ids=transform_types_to_ids,
+                                    values_instead_of_enums=values_instead_of_enums,
+                                    _depth=_depth+1,
+                                    _max_depth=_max_depth,
+                                    _raise_recursion_error=_raise_recursion_error,
+                                    ) 
+                for v in value if v is not None
+            ]
+        elif isinstance(value, dict):
+            return {
+                k: self._prepare_value(v, remove_none_values=remove_none_values, 
+                                       transform_types_to_ids=transform_types_to_ids,
+                                       values_instead_of_enums=values_instead_of_enums,
+                                       _depth=_depth+1,
+                                       _max_depth=_max_depth,
+                                       _raise_recursion_error=_raise_recursion_error,
+                                       )
+                for k, v in value.items() if remove_none_values and v is not None
+            }
+        else:
+            return value
+
     @FT.lru_cache(1)
     def webhookinfo(self) -> 'WebhookInfo':
         res = self.get(Api.webhookinfo)
@@ -132,69 +184,46 @@ class Bot(User):
                 allowed_updates: T.List[T.Union[str, 'Update.Type']] = None,
                 offset: int = None,  # raw telegram offset see /getUpdates docs
                 ) -> T.List['Update']:
-
-        offset = offset or after and (after if isinstance(after, int) else after.id)+1  # else Update instance
-        allowed_updates = allowed_updates and [au if isinstance(au, str) else au.value for au in allowed_updates]
-        data = self._remove_nones(offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates)
+        data = self._prepare_value(dict(offset=offset or after, limit=limit, timeout=timeout, allowed_updates=allowed_updates))
 
         res = self.get(Api.updates, json=data)
         return Update.from_(res, many=True)
-
-    def _remove_nones(self, data: dict = (), **kwargs) -> dict:
-        return {k: v for k, v in dict(data, **kwargs).items() if v is not None}
-
-    def _chat_argument_transformed_to_id(*lookup: T.List[T.Union[int, str]]):
-        lookup_args = set(l for l in lookup if isinstance(l, int))
-        lookup_kwargs = set(l for l in lookup if isinstance(l, str))
-        def wow(f):
-            tr = lambda chat: chat.id if isinstance(chat, Chat) else chat
-            @FT.wraps(f)
-            def wrapper(*args, **kwargs):
-                args = tuple((tr(a) if (not lookup_args or i in lookup_args) else a) for i, a in enumerate(args))
-                kwargs = {k: (tr(v) if (not lookup_kwargs or k in lookup_kwargs) else v) for k, v in kwargs.items()}
-                return f(*args, **kwargs)
-            return wrapper
-        return wow
     
-    @_chat_argument_transformed_to_id(1, 'chat')
     def send_message(self, chat: T.Union['Chat', int], text, 
                      parse_mode=None, disable_web_page_preview=None,
                      disable_notification=None,
-                     reply_to_message_id=None,
+                     reply_to_message=None,
                      reply_markup=None,
                      ) -> 'Message':
 
-        data = self._remove_nones(chat_id=chat, text=text, 
-                                  parse_mode=parse_mode and parse_mode.value,
-                                  disable_web_page_preview=disable_web_page_preview,
-                                  disable_notification=disable_notification,
-                                  reply_to_message_id=reply_to_message_id,
-                                  reply_markup=reply_markup,
-                                  )
+        data = self._prepare_value(dict(chat_id=chat, text=text, 
+                                        parse_mode=parse_mode,
+                                        disable_web_page_preview=disable_web_page_preview,
+                                        disable_notification=disable_notification,
+                                        reply_to_message_id=reply_to_message,
+                                        reply_markup=reply_markup,
+                                        ))
         res = self.post(Api.send_message, json=data)
         return Message.from_(res)
 
-    @_chat_argument_transformed_to_id()
     def send_chat_action(self, chat: T.Union['Chat', int], action: 'Chat.Action') -> bool:
-        res = self.post(Api.send_chat_action, json=dict(chat_id=chat, action=action.value))
-        return res
+        return self.post(Api.send_chat_action, json=self._prepare_value(dict(chat_id=chat, action=action)))
 
-    @_chat_argument_transformed_to_id(1, 'chat')
     def send_document(self, chat: T.Union['Chat', int], document, 
                       caption=None, thumb=None, 
                       parse_mode=None, disable_web_page_preview=None,
                       disable_notification=None,
-                      reply_to_message_id=None,
+                      reply_to_message=None,
                       reply_markup=None,
                       ) -> 'Message':
 
-        data = self._remove_nones(chat_id=chat, caption=caption,
-                                  parse_mode=parse_mode and parse_mode.value,
-                                  disable_web_page_preview=disable_web_page_preview,
-                                  disable_notification=disable_notification,
-                                  reply_to_message_id=reply_to_message_id,
-                                  reply_markup=reply_markup,
-                                  )
+        data = self._prepare_value(dict(chat_id=chat, caption=caption,
+                                        parse_mode=parse_mode and parse_mode.value,
+                                        disable_web_page_preview=disable_web_page_preview,
+                                        disable_notification=disable_notification,
+                                        reply_to_message_id=reply_to_message,
+                                        reply_markup=reply_markup,
+                                        ))
         files = None
         if isinstance(document, str):
             data['document'] = document
