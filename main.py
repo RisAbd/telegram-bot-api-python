@@ -286,6 +286,12 @@ class MessageEntity(ConverterMixin):
     user = attr.ib(default=None)
 
 
+@attr.s
+class Location(ConverterMixin):
+    latitude = attr.ib()
+    longitude = attr.ib()
+
+
 class Message(ConverterMixin):
     converter_map = {'message_id': 'id', 'from': 'from_', }
 
@@ -302,6 +308,7 @@ class Message(ConverterMixin):
 
     document = attr.ib(default=None, converter=attr.converters.optional(Document.converter))
 
+    location = attr.ib(default=None, converter=attr.converters.optional(Location.converter))
 
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
