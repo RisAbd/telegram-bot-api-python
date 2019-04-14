@@ -293,6 +293,25 @@ class Update(ConverterMixin):
     shipping_query = attr.ib(default=None)
     pre_checkout_query= attr.ib(default=None)
 
+    class Type(enum.Enum):
+
+        MESSAGE = 'message'
+        EDITED_MESSAGE = 'edited_message'
+        CHANNEL_POST = 'channel_post'
+        EDITED_CHANNEL_POST = 'edited_channel_post'
+        INLINE_QUERY = 'inline_query'
+        CHOSEN_INLINE_RESULT = 'chosen_inline_result'
+        CALLBACK_QUERY = 'callback_query'
+        SHIPPING_QUERY = 'shipping_query'
+        PRE_CHECKOUT_QUERY = 'pre_checkout_query'
+
+    @property
+    def type(self) -> Type:
+        for t in self.Type:
+            if getattr(self, t.value) is not None:
+                return t
+        assert False, 'kek'
+
 
 def main():
     BOT_API_TOKEN = config('BOT_API_TOKEN', cast=str)
@@ -307,24 +326,30 @@ def main():
 
     updates = bot.updates()
 
-    u = updates[0]
+    for u in updates:
+        print(u)
+        print(u.type)
 
-    action_sent = bot.send_chat_action(u.message.chat, Chat.Action.TYPING)
-    time.sleep(0.5)
-    sent_message = bot.send_message(chat=u.message.chat, text='*lel* _kek_ `xd`', parse_mode=Message.ParseMode.MARKDOWN)
-    print(sent_message
+    # updates = bot.updates(after=locals().get('u'))
+    # assert updates == []
+
+    # action_sent = bot.send_chat_action(u.message.chat, Chat.Action.TYPING)
+    # time.sleep(0.5)
+
+    # sent_message = bot.send_message(chat=u.message.chat, text='*lel* _kek_ `xd`', parse_mode=Message.ParseMode.MARKDOWN)
+    # print(sent_message)
 
     # import io
-    # with io.BytesIO(b'some content file') as f:
+    # with io.BytesIO(b'some content file') as f: 
     #     f.name = 'kek.txt'
 
-    message_with_doc = bot.send_document(chat=u.message.chat, document='BQADBAADmQAD17aEUaCF8A1RHZMnAg', 
-                                         caption='hey see my _*document*_ here',
-                                         parse_mode=Message.ParseMode.MARKDOWN,
-                                         reply_to_message_id=u.message.id,
-                                         )
+    # message_with_doc = bot.send_document(chat=u.message.chat, document='BQADBAADmQAD17aEUaCF8A1RHZMnAg', 
+    #                                      caption='hey see my _*document*_ here',
+    #                                      parse_mode=Message.ParseMode.MARKDOWN,
+    #                                      reply_to_message_id=u.message.id,
+    #                                      )
 
-    print(message_with_doc)
+    # print(message_with_doc)
 
 
 if __name__ == '__main__':
