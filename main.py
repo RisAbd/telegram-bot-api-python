@@ -126,13 +126,19 @@ class Bot(User):
         res = self.get(Api.webhookinfo)
         return WebhookInfo.from_(res)
 
-    def updates(self) -> T.List['Update']:
-        res = self.get(Api.updates)
-        return Update.from_(res, many=True)
+    def updates(self, after: 'Update' = None, 
+                limit: int = None, 
+                timeout: int = None, 
+                allowed_updates: T.List[T.Union[str, 'Update.Type']] = None,
+                offset: int = None,  # raw telegram offset see /getUpdates docs
+                ) -> T.List['Update']:
 
-    # def _chat_id(self, chat) -> int:
-    #     assert isinstance(chat, (Chat, int))
-    #     return chat.id if isinstance(chat, Chat) else chat
+        offset = offset or after and (after if isinstance(after, int) else after.id)+1  # else Update instance
+        allowed_updates = allowed_updates and [au if isinstance(au, str) else au.value for au in allowed_updates]
+        data = self._remove_nones(offset=offset, limit=limit, timeout=timeout, allowed_updates=allowed_updates)
+
+        res = self.get(Api.updates, json=data)
+        return Update.from_(res, many=True)
 
     def _remove_nones(self, data: dict = (), **kwargs) -> dict:
         return {k: v for k, v in dict(data, **kwargs).items() if v is not None}
@@ -283,7 +289,7 @@ class Update(ConverterMixin):
     converter_map = dict(update_id='id')
 
     id = attr.ib()
-    message = attr.ib(default=None, converter=Message.converter)
+    message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
     edited_message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
     channel_post = attr.ib(default=None)
     edited_channel_post = attr.ib(default=None)
