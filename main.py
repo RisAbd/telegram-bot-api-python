@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys, os
 import requests
 from decouple import config
 import attr
@@ -41,12 +42,15 @@ class Api:
     ME = '/getMe'
     UPDATES = '/getUpdates'
     WEBHOOK_INFO = '/getWebhookInfo'
+    SET_WEBHOOK = '/setWebhook'
+    DELETE_WEBHOOK = '/deleteWebhook'
     SEND_MESSAGE = '/sendMessage'
     SEND_CHAT_ACTION = '/sendChatAction'
     SEND_DOCUMENT = '/sendDocument'
+    GET_FILE = '/getFile'
 
-    def _api(api):
-        return classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
+
+    _api = lambda api: classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
 
     me = _api(ME)
     updates = _api(UPDATES)
@@ -54,6 +58,13 @@ class Api:
     send_message = _api(SEND_MESSAGE)
     send_chat_action = _api(SEND_CHAT_ACTION)
     send_document = _api(SEND_DOCUMENT)
+
+    set_webhook = _api(SET_WEBHOOK)
+    delete_webhook = _api(DELETE_WEBHOOK)
+
+    get_file = _api(GET_FILE)
+
+    file_by_file_path = classmethod(lambda cls, file_path: lambda token: '{}/file{}{}'.format(cls.HOST, cls.BOT.format(token=token), '/'+file_path))
 
 
 class BaseAPIException(BaseException):
@@ -84,8 +95,15 @@ class WebhookInfo(ConverterMixin):
     last_error_date = attr.ib(default=None)
     last_error_message = attr.ib(default=None)
     max_connections = attr.ib(default=None)
-    allowed_updates = attr.ib(default=None)
+    allowed_updates = attr.ib(default=None, converter=attr.converters.optional(lambda x: list(map(Update.Type, x))))
 
+    @property
+    def is_set_up(self) -> bool:
+        return bool(self.url)
+
+    def __bool__(self):
+        return self.is_set_up
+    
 
 @attr.s
 class User(ConverterMixin):
@@ -102,13 +120,17 @@ class Bot(User):
     _api_token = attr.ib(repr=False, kw_only=True)
 
     @classmethod
-    def by(cls, token):
+    def by(cls, token) -> 'Bot':
         r = requests.get(Api.me(token), ).json()['result']
         return Bot.from_(r, api_token=token)
 
-    def request(self, method, url_builder, _verbose=False, **kwargs):
-        r = requests.request(method, url_builder(token=self._api_token), **kwargs)
+    def request(self, method, url_builder, _verbose=False, _raw_return=False, **kwargs):
+        url = url_builder(token=self._api_token)
+        logger.debug('%s: %r', method, url)
+        r = requests.request(method, url, **kwargs)
         logger.debug('%r', r)
+        if _raw_return:
+            return r
         j = r.json()
         logger.debug('%r', j)
         if not j['ok']:
@@ -132,7 +154,7 @@ class Bot(User):
                        ) -> dict:
 
         if transform_types_to_ids is None:
-            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', Document: 'file_id'}
+            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', Document: 'file_id', Audio: 'file_id'}
 
         if _depth >= (_max_depth or float('inf')):
             if _raise_recursion_error:
@@ -173,10 +195,22 @@ class Bot(User):
         else:
             return value
 
-    @FT.lru_cache(1)
     def webhookinfo(self) -> 'WebhookInfo':
         res = self.get(Api.webhookinfo)
         return WebhookInfo.from_(res)
+
+    def set_webhook(self, url: str, certificate=None, max_connections: int = None, allowed_updates: list = None) -> bool:   
+        if allowed_updates in ('all', None):
+            allowed_updates = []
+        data = self._prepare_value(dict(url=url, max_connections=max_connections, allowed_updates=allowed_updates))
+        if certificate is not None:
+            files = dict(certificate=certificate)
+        else:
+            files = None
+        return self.post(Api.set_webhook, data=data, files=files)
+
+    def delete_webhook(self) -> bool:
+        return self.post(Api.delete_webhook)
 
     def updates(self, after: 'Update' = None, 
                 limit: int = None, 
@@ -231,7 +265,19 @@ class Bot(User):
             files = dict(document=document)
 
         res = self.post(Api.send_document, data=data, files=files)
-        return Message.from_(res) 
+        return Message.from_(res)
+
+    def file(self, file_id):
+        res = self.get(Api.get_file, params=dict(file_id=file_id))
+        file = File.from_(res)
+        return self.get(Api.file_by_file_path(file.file_path), _raw_return=True).content
+
+
+@attr.s
+class File(ConverterMixin):
+    file_id = attr.ib()
+    file_size = attr.ib(default=None)
+    file_path = attr.ib(default=None)
 
 
 @attr.s
@@ -249,6 +295,17 @@ class Document(ConverterMixin):
     file_id = attr.ib()
     thumb = attr.ib(default=None, converter=attr.converters.optional(Thumb.converter))
     file_name = attr.ib(default=None)
+    mime_type = attr.ib(default=None)
+    file_size = attr.ib(default=None)
+
+
+@attr.s
+class Audio(ConverterMixin):
+    file_id = attr.ib()
+    duration = attr.ib()
+    performer = attr.ib(default=None)
+    title = attr.ib(default=None)
+    thumb = attr.ib(default=None, converter=attr.converters.optional(Thumb.converter))
     mime_type = attr.ib(default=None)
     file_size = attr.ib(default=None)
 
@@ -285,6 +342,12 @@ class MessageEntity(ConverterMixin):
     url = attr.ib(default=None)
     user = attr.ib(default=None)
 
+    def text(self, message: T.Union[str, 'Message']) -> str:
+        if isinstance(message, Message):
+            return message.text[self.offset:self.offset+self.length]
+        else:
+            return message[self.offset:self.offset+self.length]
+
 
 @attr.s
 class Location(ConverterMixin):
@@ -309,6 +372,8 @@ class Message(ConverterMixin):
     document = attr.ib(default=None, converter=attr.converters.optional(Document.converter))
 
     location = attr.ib(default=None, converter=attr.converters.optional(Location.converter))
+
+    audio = attr.ib(default=None, converter=attr.converters.optional(Audio.converter))
 
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
@@ -384,7 +449,18 @@ def main():
 
     test(bot)
 
-    webhookinfo = bot.webhookinfo()
+    # with open('hicranda_gonlum.mp3', 'wb') as f:
+    #     f.write(bot.file('CQADAgADvAMAArCqWEsSWuzVBRHRfRYE'))
+
+    # sys.exit()
+
+    print(bot.set_webhook('https://kekmek.tk/telegram/bot'))
+    print(bot.webhookinfo())
+
+    #print(bot.delete_webhook())
+    #print(bot.webhookinfo())
+
+    sys.exit()
 
     updates = bot.updates()
 
