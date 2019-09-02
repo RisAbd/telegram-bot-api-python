@@ -115,6 +115,28 @@ class User(ConverterMixin):
     language_code = attr.ib(default=None)
 
 
+class _AsWebhookResponse(Exception):
+    def __init__(self, data):
+        self._data = data
+    def data(self, with_method_name):
+        d = self._data
+        d['method'] = with_method_name
+        return d
+
+
+def webhook_responsible(method):
+    method = method.lstrip('/')
+    def wow(f):
+        @FT.wraps(f)
+        def wrapper(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except _AsWebhookResponse as e:
+                return e.data(method)
+        return wrapper
+    return wow
+
+
 @attr.s(frozen=True)
 class Bot(User):
     _api_token = attr.ib(repr=False, kw_only=True)
@@ -154,7 +176,9 @@ class Bot(User):
                        ) -> dict:
 
         if transform_types_to_ids is None:
-            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', Document: 'file_id', Audio: 'file_id'}
+            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', 
+                                      Document: 'file_id', Audio: 'file_id', File: 'file_id',
+                                      }
 
         if _depth >= (_max_depth or float('inf')):
             if _raise_recursion_error:
@@ -223,11 +247,13 @@ class Bot(User):
         res = self.get(Api.updates, json=data)
         return Update.from_(res, many=True)
     
+    @webhook_responsible(Api.SEND_MESSAGE)
     def send_message(self, chat: T.Union['Chat', int], text, 
                      parse_mode=None, disable_web_page_preview=None,
                      disable_notification=None,
                      reply_to_message=None,
                      reply_markup=None,
+                     as_webhook_response=False,
                      ) -> 'Message':
 
         data = self._prepare_value(dict(chat_id=chat, text=text, 
@@ -237,18 +263,27 @@ class Bot(User):
                                         reply_to_message_id=reply_to_message,
                                         reply_markup=reply_markup,
                                         ))
+        if as_webhook_response:
+            raise _AsWebhookResponse(data)
+
         res = self.post(Api.send_message, json=data)
         return Message.from_(res)
 
-    def send_chat_action(self, chat: T.Union['Chat', int], action: 'Chat.Action') -> bool:
-        return self.post(Api.send_chat_action, json=self._prepare_value(dict(chat_id=chat, action=action)))
+    @webhook_responsible(Api.SEND_CHAT_ACTION)
+    def send_chat_action(self, chat: T.Union['Chat', int], action: 'Chat.Action', as_webhook_response=False) -> bool:
+        data = json=self._prepare_value(dict(chat_id=chat, action=action))
+        if as_webhook_response:
+            raise _AsWebhookResponse(data)
+        return self.post(Api.send_chat_action, json=data)
 
+    @webhook_responsible(Api.SEND_DOCUMENT)
     def send_document(self, chat: T.Union['Chat', int], document, 
                       caption=None, thumb=None, 
                       parse_mode=None, disable_web_page_preview=None,
                       disable_notification=None,
                       reply_to_message=None,
                       reply_markup=None,
+                      as_webhook_response=False, 
                       ) -> 'Message':
 
         data = self._prepare_value(dict(chat_id=chat, caption=caption,
@@ -263,6 +298,11 @@ class Bot(User):
             data['document'] = document
         else:
             files = dict(document=document)
+        
+        if as_webhook_response:
+            if files:
+                raise RuntimeError('can not reply with file response')
+            raise _AsWebhookResponse(data)
 
         res = self.post(Api.send_document, data=data, files=files)
         return Message.from_(res)
@@ -378,6 +418,13 @@ class Message(ConverterMixin):
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
         HTML = 'HTML'
+    
+    @property
+    def bot_command(self) -> T.Optional[str]:
+        for e in self.entities:
+            if e.offset == 0 and e.type == 'bot_command':
+                return e.text(self.text)
+
 
 # workaround self referencing converter
 # reply_to_message is Message
