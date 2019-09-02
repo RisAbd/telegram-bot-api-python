@@ -1,7 +1,7 @@
 # Library for Telegram Bot API on python
 
 ```python
-from main import *
+from telegram import *
 
 bot = Bot.by(BOT_API_TOKEN)
 print(bot)
