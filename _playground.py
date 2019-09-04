@@ -63,17 +63,22 @@ def main():
     updates = bot.updates()
 
 
-    markup = InlineKeyboardMarkup.from_rows_of(
-        buttons=list(map(lambda t: InlineKeyboardMarkup.Button(text=t, callback_data=t), 'abcdefghikl')), 
-        items_in_row=3, 
+    # markup = InlineKeyboardMarkup.from_rows_of(
+    #     buttons=list(map(lambda t: InlineKeyboardMarkup.Button(text=t, callback_data=t), 'abcdef')), 
+    #     items_in_row=3, 
+    # )
+    # pprint(markup.inline_keyboard)
+
+    markup = ReplyKeyboardMarkup.from_rows_of(
+        *map(ReplyKeyboardMarkup.Button, 'lel kek xd lil'.split()),
+        one_time_keyboard=True,
     )
-    pprint(markup.inline_keyboard)
+    pprint(markup.keyboard)
 
     u = None
     while True:
         print('sleeping...')
-        time.sleep(2)
-        for u in bot.updates(after=u, timeout=5):
+        for u in bot.updates(after=u, timeout=8):
             print(u)
             print(u.type)
             chat = None

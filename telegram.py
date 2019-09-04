@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 
 # UTILS
 
-def _from(cls, result: T.Union[list, dict], many=False, **kwargs):
+
+_T = T.Type
+
+
+def _from(cls: _T, result: T.Union[list, dict, _T], many=False, **kwargs):
+    if isinstance(result, cls):
+        return result
     converter_map = getattr(cls, 'converter_map', {})
     # logger.debug('cls=%r, many=%r: %r', cls, many, result)
     if many:
@@ -25,7 +31,8 @@ def _from(cls, result: T.Union[list, dict], many=False, **kwargs):
 
 
 def from_added(cls):
-    cls.from_ = cls.converter = classmethod(_from)
+    cls.from_ = cls.converter = cls.c = classmethod(_from)
+    cls.c_opt = classmethod(lambda cls, v: attr.converters.optional(cls.c)(v))
     cls.list = classmethod(FT.partial(_from, many=True))
     return cls
 
@@ -334,7 +341,7 @@ Thumb = PhotoSize
 @attr.s
 class Document(ConverterMixin):
     file_id = attr.ib()
-    thumb = attr.ib(default=None, converter=attr.converters.optional(Thumb.converter))
+    thumb = attr.ib(default=None, converter=Thumb.c_opt)
     file_name = attr.ib(default=None)
     mime_type = attr.ib(default=None)
     file_size = attr.ib(default=None)
@@ -346,7 +353,7 @@ class Audio(ConverterMixin):
     duration = attr.ib()
     performer = attr.ib(default=None)
     title = attr.ib(default=None)
-    thumb = attr.ib(default=None, converter=attr.converters.optional(Thumb.converter))
+    thumb = attr.ib(default=None, converter=Thumb.c_opt)
     mime_type = attr.ib(default=None)
     file_size = attr.ib(default=None)
 
@@ -396,17 +403,49 @@ class Location(ConverterMixin):
     longitude = attr.ib()
 
 
-class Markup:
+class Markup(ConverterMixin):
+    """Base class for all markups"""
+    
+    @classmethod
+    def guess(cls, v):
+        markups = [ReplyKeyboardMarkup, InlineKeyboardMarkup, ReplyKeyboardRemove, ForceReply]
+        assert isinstance(v, dict)
+        keys = set(v.keys())
+        for m in markups:
+            if keys.issubset([a.name for a in m.__attrs_attrs__]):
+                return m.from_(v)
+        assert False, 'unknown markup: %r' % v
+        
+
+@attr.s
+class ForceReply(Markup):
+    force_reply = attr.ib(default=True, init=False)
+
+
+@attr.s
+class ReplyKeyboardRemove(Markup):
+    remove_keyboard = attr.ib(default=True, init=False)
+
+
+class KeyboardMarkup(Markup):
+    """Base class for keyboard markups"""
 
     @attr.s
-    class Button:
+    class Button(ConverterMixin):
         text = attr.ib()
+
+    _keyboard_key = None
+
+    def __attrs_post_init__(self):
+        for row in getattr(self, self._keyboard_key):
+            for i, button in enumerate(row):
+                row[i] = self.Button.from_(button)
     
     @classmethod
     def _make_buttons(cls, buttons) -> T.List[Button]:
         if all(isinstance(b, str) for b in buttons):
             buttons = [cls.Button(text=t) for t in buttons]
-        assert all(isinstance(b, cls.Button) for b in buttons), 'Buttons must be ({}) types'.format((str, cls.Button))
+        assert all(isinstance(b, cls.Button) for b in buttons), 'Buttons must be {} types, not {}'.format((str, cls.Button), set(map(type, buttons)))
         return buttons
 
     @classmethod
@@ -444,10 +483,11 @@ class Markup:
 
 
 @attr.s
-class InlineKeyboardMarkup(Markup):
+class InlineKeyboardMarkup(KeyboardMarkup):
+    _keyboard_key = 'inline_keyboard'
     
     @attr.s
-    class Button(Markup.Button):
+    class Button(KeyboardMarkup.Button):
         url = attr.ib(default=None)
         login_url = attr.ib(default=None)
         callback_data = attr.ib(default=None)
@@ -459,9 +499,11 @@ class InlineKeyboardMarkup(Markup):
     inline_keyboard = attr.ib()
 
 @attr.s
-class ReplyKeyboardMarkup(Markup):
+class ReplyKeyboardMarkup(KeyboardMarkup):
+    _keyboard_key = 'keyboard'
+
     @attr.s
-    class Button(Markup.Button):
+    class Button(KeyboardMarkup.Button):
         request_contact = attr.ib(default=None)
         request_location = attr.ib(default=None)
 
@@ -476,23 +518,23 @@ class Message(ConverterMixin):
 
     id = attr.ib()
     date = attr.ib(converter=datetime.fromtimestamp)
-    chat = attr.ib(converter=Chat.converter)
+    chat = attr.ib(converter=Chat.c)
     text = attr.ib(default=None)
     edit_date = attr.ib(default=None, converter=attr.converters.optional(datetime.fromtimestamp))
-    from_ = attr.ib(default=None, converter=attr.converters.optional(User.converter))
+    from_ = attr.ib(default=None, converter=User.c_opt)
     entities = attr.ib(factory=list, converter=MessageEntity.list)
     
     caption = attr.ib(default=None)
     caption_entities = attr.ib(factory=list, converter=MessageEntity.list)
 
-    document = attr.ib(default=None, converter=attr.converters.optional(Document.converter))
+    document = attr.ib(default=None, converter=Document.c_opt)
 
-    location = attr.ib(default=None, converter=attr.converters.optional(Location.converter))
+    location = attr.ib(default=None, converter=Location.c_opt)
 
-    audio = attr.ib(default=None, converter=attr.converters.optional(Audio.converter))
+    audio = attr.ib(default=None, converter=Audio.c_opt)
 
     # todo: serialize back when getting field from telegram
-    reply_markup = attr.ib(default=None)
+    reply_markup = attr.ib(default=None, converter=attr.converters.optional(Markup.guess))
 
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
@@ -507,7 +549,7 @@ class Message(ConverterMixin):
 
 # workaround self referencing converter
 # reply_to_message is Message
-Message.reply_to_message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
+Message.reply_to_message = attr.ib(default=None, converter=Message.c_opt)
 Message = attr.s(Message)
 
 
@@ -526,7 +568,7 @@ class CallbackQuery(ConverterMixin):
     from_ = attr.ib()
     chat_instance = attr.ib()
     data = attr.ib(default=None)
-    message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
+    message = attr.ib(default=None, converter=Message.c_opt)
     inline_message_id = attr.ib(default=None)
 
 
@@ -535,13 +577,13 @@ class Update(ConverterMixin):
     converter_map = dict(update_id='id')
 
     id = attr.ib()
-    message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
-    edited_message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
+    message = attr.ib(default=None, converter=Message.c_opt)
+    edited_message = attr.ib(default=None, converter=Message.c_opt)
     channel_post = attr.ib(default=None)
     edited_channel_post = attr.ib(default=None)
     inline_query = attr.ib(default=None)
     chosen_inline_result = attr.ib(default=None)
-    callback_query = attr.ib(default=None, converter=attr.converters.optional(CallbackQuery.converter))
+    callback_query = attr.ib(default=None, converter=CallbackQuery.c_opt)
     shipping_query = attr.ib(default=None)
     pre_checkout_query= attr.ib(default=None)
 
