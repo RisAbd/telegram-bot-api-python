@@ -28,6 +28,19 @@ def main():
     logger.level = getattr(logging, LOGLEVEL, logging.DEBUG)
     logging.basicConfig()
 
+    from pprint import pprint
+
+    # markup = ReplyKeyboardMarkup.from_rows_of(buttons=list('abcdef'), items_in_row=3)
+    # pprint(markup.keyboard)
+
+    # another_markup = ReplyKeyboardMarkup.construct(
+    #     ReplyKeyboardMarkup.row(ReplyKeyboardMarkup.Button('lel'), ReplyKeyboardMarkup.Button('kek')),
+    #     ReplyKeyboardMarkup.row(buttons=[ReplyKeyboardMarkup.Button('xd'), ReplyKeyboardMarkup.Button('lil')]),
+    #     ReplyKeyboardMarkup.row(buttons=['kak', 'dela?', 'vashi']),
+    # )
+    # pprint(another_markup.keyboard)
+
+
     bot = Bot.by(BOT_API_TOKEN)
 
     # test prepare_value
@@ -44,17 +57,42 @@ def main():
     # print(bot.set_webhook('https://kekmek.tk/telegram/bot'))
 
     # delete webhook
-    # print(bot.delete_webhook())
+    print(bot.delete_webhook())
 
     # get bot updates by long-polling
     updates = bot.updates()
 
-    for u in updates:
-        print(u)
-        print(u.type)
 
-    updates = bot.updates(after=locals().get('u'))
-    assert updates == []
+    markup = InlineKeyboardMarkup.from_rows_of(
+        buttons=list(map(lambda t: InlineKeyboardMarkup.Button(text=t, callback_data=t), 'abcdefghikl')), 
+        items_in_row=3, 
+    )
+    pprint(markup.inline_keyboard)
+
+    u = None
+    while True:
+        print('sleeping...')
+        time.sleep(2)
+        for u in bot.updates(after=u, timeout=5):
+            print(u)
+            print(u.type)
+            chat = None
+            if u.type == u.Type.MESSAGE:
+                chat = u.message.chat
+            elif u.type == u.Type.CALLBACK_QUERY:
+                chat = u.callback_query.message.chat
+            
+            if chat is not None:
+                bot.send_message(chat=chat, 
+                                text='*lel* _kek_ `xd`', 
+                                parse_mode=Message.ParseMode.MARKDOWN, 
+                                reply_markup=markup,
+                                )
+            else:
+                logger.warning('chat is None, update type is unhandled: %r', u.type)
+
+    # updates = bot.updates(after=locals().get('u'))
+    # assert updates == []
 
     # send chat action
     # action_sent = bot.send_chat_action(u.message.chat, Chat.Action.TYPING)

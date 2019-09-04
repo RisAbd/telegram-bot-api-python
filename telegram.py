@@ -7,6 +7,7 @@ import functools as FT, itertools as IT, typing as T, operator as OP
 import enum
 import time
 from datetime import datetime
+import collections as C
 
 import logging
 
@@ -167,6 +168,7 @@ class Bot(User):
     def _prepare_value(self, value: T.Any, 
                        remove_none_values=True, 
                        transform_types_to_ids: T.Dict[type, str] = None,
+                       dictify_types: T.Tuple[type] = None,
                        values_instead_of_enums=True,
                        update_type_to_id_with_inc=True,
                        _depth=0,
@@ -178,6 +180,9 @@ class Bot(User):
             transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', 
                                       Document: 'file_id', Audio: 'file_id', File: 'file_id',
                                       }
+        if dictify_types is None:
+            dictify_types = (Markup, )
+            transform_types_to_ids.pop(Markup, None)
 
         if _depth >= (_max_depth or float('inf')):
             if _raise_recursion_error:
@@ -185,35 +190,32 @@ class Bot(User):
             else:
                 return value
 
+        rec_f = lambda v: self._prepare_value(v, remove_none_values=remove_none_values, 
+                                              dictify_types=dictify_types,
+                                              transform_types_to_ids=transform_types_to_ids,
+                                              values_instead_of_enums=values_instead_of_enums,
+                                              _depth=_depth+1,
+                                              _max_depth=_max_depth,
+                                              _raise_recursion_error=_raise_recursion_error,
+                                              ) 
+
         vtype = type(value)
 
         if isinstance(value, Update) and update_type_to_id_with_inc:
             return value.id + 1
         elif isinstance(value, enum.Enum) and values_instead_of_enums:
             return value.value
+        elif isinstance(value, dictify_types):
+            return rec_f(attr.asdict(value))
         elif vtype in transform_types_to_ids:
             return getattr(value, transform_types_to_ids[vtype])
         elif isinstance(value, (list, tuple)):
-            return [
-                self._prepare_value(v, remove_none_values=remove_none_values, 
-                                    transform_types_to_ids=transform_types_to_ids,
-                                    values_instead_of_enums=values_instead_of_enums,
-                                    _depth=_depth+1,
-                                    _max_depth=_max_depth,
-                                    _raise_recursion_error=_raise_recursion_error,
-                                    ) 
-                for v in value if v is not None
-            ]
+            return [rec_f(v) for v in value if v is not None]
         elif isinstance(value, dict):
             return {
-                k: self._prepare_value(v, remove_none_values=remove_none_values, 
-                                       transform_types_to_ids=transform_types_to_ids,
-                                       values_instead_of_enums=values_instead_of_enums,
-                                       _depth=_depth+1,
-                                       _max_depth=_max_depth,
-                                       _raise_recursion_error=_raise_recursion_error,
-                                       )
-                for k, v in value.items() if remove_none_values and v is not None
+                k: rec_f(v)
+                for k, v in value.items() 
+                if not remove_none_values or v is not None
             }
         else:
             return value
@@ -394,6 +396,81 @@ class Location(ConverterMixin):
     longitude = attr.ib()
 
 
+class Markup:
+
+    @attr.s
+    class Button:
+        text = attr.ib()
+    
+    @classmethod
+    def _make_buttons(cls, buttons) -> T.List[Button]:
+        if all(isinstance(b, str) for b in buttons):
+            buttons = [cls.Button(text=t) for t in buttons]
+        assert all(isinstance(b, cls.Button) for b in buttons), 'Buttons must be ({}) types'.format((str, cls.Button))
+        return buttons
+
+    @classmethod
+    def _buttons(cls, args, buttons) -> T.List[Button]:
+        error_msg = 'one of *buttons of buttons= required not empty'
+        if args:
+            assert buttons is None, error_msg
+            return list(args)
+        elif buttons:
+            assert not args, error_msg
+            return list(buttons)
+        assert False, error_msg
+
+    @classmethod
+    def row(cls, *btns: T.Iterable[Button], buttons=None):
+        return cls._make_buttons(cls._buttons(btns, buttons))
+    
+    @classmethod
+    def from_rows_of(cls, *btns, buttons=None, items_in_row=2, **keyboard_options):
+        buttons = C.deque(cls._make_buttons(cls._buttons(btns, buttons)))
+        r = []
+        c = []
+        r.append(c)
+        i = 0
+        while buttons:
+            if len(c) == items_in_row:
+                c = []
+                r.append(c)
+            c.append(buttons.popleft())
+        return cls(r, **keyboard_options)
+
+    @classmethod
+    def construct(cls, *rows, **keyboard_options):
+        return cls(rows, **keyboard_options)
+
+
+@attr.s
+class InlineKeyboardMarkup(Markup):
+    
+    @attr.s
+    class Button(Markup.Button):
+        url = attr.ib(default=None)
+        login_url = attr.ib(default=None)
+        callback_data = attr.ib(default=None)
+        switch_inline_query = attr.ib(default=None)
+        switch_inline_query_current_chat = attr.ib(default=None)
+        callback_game = attr.ib(default=None)
+        pay = attr.ib(default=None)
+
+    inline_keyboard = attr.ib()
+
+@attr.s
+class ReplyKeyboardMarkup(Markup):
+    @attr.s
+    class Button(Markup.Button):
+        request_contact = attr.ib(default=None)
+        request_location = attr.ib(default=None)
+
+    keyboard = attr.ib()
+    resize_keyboard = attr.ib(default=None)
+    one_time_keyboard = attr.ib(default=None)
+    selective = attr.ib(default=None)
+
+
 class Message(ConverterMixin):
     converter_map = {'message_id': 'id', 'from': 'from_', }
 
@@ -414,6 +491,9 @@ class Message(ConverterMixin):
 
     audio = attr.ib(default=None, converter=attr.converters.optional(Audio.converter))
 
+    # todo: serialize back when getting field from telegram
+    reply_markup = attr.ib(default=None)
+
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
         HTML = 'HTML'
@@ -432,6 +512,25 @@ Message = attr.s(Message)
 
 
 @attr.s
+class CallbackQuery(ConverterMixin):
+    """
+    id	String	Unique identifier for this query
+    from	User	Sender
+    message	Message	Optional. Message with the callback button that originated the query. Note that message content and message date will not be available if the message is too old
+    inline_message_id	String	Optional. Identifier of the message sent via the bot in inline mode, that originated the query.
+    chat_instance	String	Global identifier, uniquely corresponding to the chat to which the message with the callback button was sent. Useful for high scores in games.
+    data	String	Optional. Data associated with the callback button. Be aware that a bad client can send arbitrary data in this field.
+    """
+    converter_map = {'from': 'from_', }
+    id = attr.ib()
+    from_ = attr.ib()
+    chat_instance = attr.ib()
+    data = attr.ib(default=None)
+    message = attr.ib(default=None, converter=attr.converters.optional(Message.converter))
+    inline_message_id = attr.ib(default=None)
+
+
+@attr.s
 class Update(ConverterMixin):
     converter_map = dict(update_id='id')
 
@@ -442,7 +541,7 @@ class Update(ConverterMixin):
     edited_channel_post = attr.ib(default=None)
     inline_query = attr.ib(default=None)
     chosen_inline_result = attr.ib(default=None)
-    callback_query = attr.ib(default=None)
+    callback_query = attr.ib(default=None, converter=attr.converters.optional(CallbackQuery.converter))
     shipping_query = attr.ib(default=None)
     pre_checkout_query= attr.ib(default=None)
 
