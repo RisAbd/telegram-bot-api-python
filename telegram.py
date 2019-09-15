@@ -565,7 +565,7 @@ class CallbackQuery(ConverterMixin):
     """
     converter_map = {'from': 'from_', }
     id = attr.ib()
-    from_ = attr.ib()
+    from_ = attr.ib(converter=User.c)
     chat_instance = attr.ib()
     data = attr.ib(default=None)
     message = attr.ib(default=None, converter=Message.c_opt)
