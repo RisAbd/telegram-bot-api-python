@@ -56,7 +56,6 @@ class Api:
     SEND_DOCUMENT = '/sendDocument'
     GET_FILE = '/getFile'
 
-
     _api = lambda api: classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
 
     me = _api(ME)
@@ -110,7 +109,7 @@ class WebhookInfo(ConverterMixin):
 
     def __bool__(self):
         return self.is_set_up
-    
+
 
 @attr.s
 class User(ConverterMixin):
@@ -168,12 +167,12 @@ class Bot(User):
 
     def get(self, url_builder, **kwargs):
         return self.request('get', url_builder, **kwargs)
- 
+
     def post(self, url_builder, **kwargs):
         return self.request('post', url_builder, **kwargs)
 
-    def _prepare_value(self, value: T.Any, 
-                       remove_none_values=True, 
+    def _prepare_value(self, value: T.Any,
+                       remove_none_values=True,
                        transform_types_to_ids: T.Dict[type, str] = None,
                        dictify_types: T.Tuple[type] = None,
                        values_instead_of_enums=True,
@@ -184,8 +183,9 @@ class Bot(User):
                        ) -> dict:
 
         if transform_types_to_ids is None:
-            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id', 
+            transform_types_to_ids = {Update: 'id', Message: 'id', Chat: 'id', User: 'id', Bot: 'id',
                                       Document: 'file_id', Audio: 'file_id', File: 'file_id',
+                                      CallbackQuery: 'id',
                                       }
         if dictify_types is None:
             dictify_types = (Markup, )
@@ -197,14 +197,14 @@ class Bot(User):
             else:
                 return value
 
-        rec_f = lambda v: self._prepare_value(v, remove_none_values=remove_none_values, 
+        rec_f = lambda v: self._prepare_value(v, remove_none_values=remove_none_values,
                                               dictify_types=dictify_types,
                                               transform_types_to_ids=transform_types_to_ids,
                                               values_instead_of_enums=values_instead_of_enums,
                                               _depth=_depth+1,
                                               _max_depth=_max_depth,
                                               _raise_recursion_error=_raise_recursion_error,
-                                              ) 
+                                              )
 
         vtype = type(value)
 
@@ -221,7 +221,7 @@ class Bot(User):
         elif isinstance(value, dict):
             return {
                 k: rec_f(v)
-                for k, v in value.items() 
+                for k, v in value.items()
                 if not remove_none_values or v is not None
             }
         else:
@@ -231,7 +231,7 @@ class Bot(User):
         res = self.get(Api.webhookinfo)
         return WebhookInfo.from_(res)
 
-    def set_webhook(self, url: str, certificate=None, max_connections: int = None, allowed_updates: list = None) -> bool:   
+    def set_webhook(self, url: str, certificate=None, max_connections: int = None, allowed_updates: list = None) -> bool:
         if allowed_updates in ('all', None):
             allowed_updates = []
         data = self._prepare_value(dict(url=url, max_connections=max_connections, allowed_updates=allowed_updates))
@@ -244,9 +244,9 @@ class Bot(User):
     def delete_webhook(self) -> bool:
         return self.post(Api.delete_webhook)
 
-    def updates(self, after: 'Update' = None, 
-                limit: int = None, 
-                timeout: int = None, 
+    def updates(self, after: 'Update' = None,
+                limit: int = None,
+                timeout: int = None,
                 allowed_updates: T.List[T.Union[str, 'Update.Type']] = None,
                 offset: int = None,  # raw telegram offset see /getUpdates docs
                 ) -> T.List['Update']:
@@ -254,9 +254,9 @@ class Bot(User):
 
         res = self.get(Api.updates, json=data)
         return Update.from_(res, many=True)
-    
+
     @webhook_responsible(Api.SEND_MESSAGE)
-    def send_message(self, chat: T.Union['Chat', int], text, 
+    def send_message(self, chat: T.Union['Chat', int], text,
                      parse_mode=None, disable_web_page_preview=None,
                      disable_notification=None,
                      reply_to_message=None,
@@ -264,7 +264,7 @@ class Bot(User):
                      as_webhook_response=False,
                      ) -> 'Message':
 
-        data = self._prepare_value(dict(chat_id=chat, text=text, 
+        data = self._prepare_value(dict(chat_id=chat, text=text,
                                         parse_mode=parse_mode,
                                         disable_web_page_preview=disable_web_page_preview,
                                         disable_notification=disable_notification,
@@ -285,13 +285,13 @@ class Bot(User):
         return self.post(Api.send_chat_action, json=data)
 
     @webhook_responsible(Api.SEND_DOCUMENT)
-    def send_document(self, chat: T.Union['Chat', int], document, 
-                      caption=None, thumb=None, 
+    def send_document(self, chat: T.Union['Chat', int], document,
+                      caption=None, thumb=None,
                       parse_mode=None, disable_web_page_preview=None,
                       disable_notification=None,
                       reply_to_message=None,
                       reply_markup=None,
-                      as_webhook_response=False, 
+                      as_webhook_response=False,
                       ) -> 'Message':
 
         data = self._prepare_value(dict(chat_id=chat, caption=caption,
@@ -306,7 +306,7 @@ class Bot(User):
             data['document'] = document
         else:
             files = dict(document=document)
-        
+
         if as_webhook_response:
             if files:
                 raise RuntimeError('can not reply with file response')
@@ -372,13 +372,13 @@ class Chat(ConverterMixin):
     class Action(enum.Enum):
         TYPING = 'typing'  # typing for text messages
         UPLOAD_PHOTO = 'upload_photo'  # for photos
-        RECORD_VIDEO = 'record_video'  # or 
+        RECORD_VIDEO = 'record_video'  # or
         UPLOAD_VIDEO = 'upload_video'  # for videos
-        RECORD_AUDIO = 'record_audio'  # or 
-        UPLOAD_AUDIO = 'upload_audio'  # for audio files, 
-        UPLOAD_DOCUMENT = 'upload_document'  # for general files, 
-        FIND_LOCATION = 'find_location'  # for location data, 
-        RECORD_VIDEO_NOTE = 'record_video_note'  # or 
+        RECORD_AUDIO = 'record_audio'  # or
+        UPLOAD_AUDIO = 'upload_audio'  # for audio files,
+        UPLOAD_DOCUMENT = 'upload_document'  # for general files,
+        FIND_LOCATION = 'find_location'  # for location data,
+        RECORD_VIDEO_NOTE = 'record_video_note'  # or
         UPLOAD_VIDEO_NOTE = 'upload_video_note'  # for video notes.
 
 
@@ -405,7 +405,7 @@ class Location(ConverterMixin):
 
 class Markup(ConverterMixin):
     """Base class for all markups"""
-    
+
     @classmethod
     def guess(cls, v):
         markups = [ReplyKeyboardMarkup, InlineKeyboardMarkup, ReplyKeyboardRemove, ForceReply]
@@ -415,7 +415,7 @@ class Markup(ConverterMixin):
             if keys.issubset([a.name for a in m.__attrs_attrs__]):
                 return m.from_(v)
         assert False, 'unknown markup: %r' % v
-        
+
 
 @attr.s
 class ForceReply(Markup):
@@ -440,7 +440,7 @@ class KeyboardMarkup(Markup):
         for row in getattr(self, self._keyboard_key):
             for i, button in enumerate(row):
                 row[i] = self.Button.from_(button)
-    
+
     @classmethod
     def _make_buttons(cls, buttons) -> T.List[Button]:
         if all(isinstance(b, str) for b in buttons):
@@ -462,7 +462,7 @@ class KeyboardMarkup(Markup):
     @classmethod
     def row(cls, *btns: T.Iterable[Button], buttons=None):
         return cls._make_buttons(cls._buttons(btns, buttons))
-    
+
     @classmethod
     def from_rows_of(cls, *btns, buttons=None, items_in_row=2, **keyboard_options):
         buttons = C.deque(cls._make_buttons(cls._buttons(btns, buttons)))
@@ -485,7 +485,7 @@ class KeyboardMarkup(Markup):
 @attr.s
 class InlineKeyboardMarkup(KeyboardMarkup):
     _keyboard_key = 'inline_keyboard'
-    
+
     @attr.s
     class Button(KeyboardMarkup.Button):
         url = attr.ib(default=None)
@@ -523,7 +523,7 @@ class Message(ConverterMixin):
     edit_date = attr.ib(default=None, converter=attr.converters.optional(datetime.fromtimestamp))
     from_ = attr.ib(default=None, converter=User.c_opt)
     entities = attr.ib(factory=list, converter=MessageEntity.list)
-    
+
     caption = attr.ib(default=None)
     caption_entities = attr.ib(factory=list, converter=MessageEntity.list)
 
@@ -539,7 +539,7 @@ class Message(ConverterMixin):
     class ParseMode(enum.Enum):
         MARKDOWN = 'Markdown'
         HTML = 'HTML'
-    
+
     @property
     def bot_command(self) -> T.Optional[str]:
         for e in self.entities:
