@@ -55,6 +55,7 @@ class Api:
     SEND_CHAT_ACTION = '/sendChatAction'
     SEND_DOCUMENT = '/sendDocument'
     GET_FILE = '/getFile'
+    ANSWER_CALLBACK_QUERY = '/answerCallbackQuery'
 
     _api = lambda api: classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
 
@@ -68,6 +69,7 @@ class Api:
     set_webhook = _api(SET_WEBHOOK)
     delete_webhook = _api(DELETE_WEBHOOK)
 
+    answer_callback_query = _api(ANSWER_CALLBACK_QUERY)
     get_file = _api(GET_FILE)
 
     file_by_file_path = classmethod(lambda cls, file_path: lambda token: '{}/file{}{}'.format(cls.HOST, cls.BOT.format(token=token), '/'+file_path))
@@ -319,6 +321,23 @@ class Bot(User):
         res = self.get(Api.get_file, params=dict(file_id=file_id))
         file = File.from_(res)
         return self.get(Api.file_by_file_path(file.file_path), _raw_return=True).content
+
+    @webhook_responsible(Api.ANSWER_CALLBACK_QUERY)
+    def answer_callback_query(self, callback_query: T.Union['CallbackQuery', int],
+                              text: str,
+                              show_alert=None,
+                              url=None,
+                              as_webhook_response=False,
+                              ):
+        data = self._prepare_value(dict(
+            callback_query_id=callback_query,
+            text=text,
+            show_alert=show_alert,
+            url=url,
+        ))
+        if as_webhook_response:
+            raise _AsWebhookResponse(data)
+        return self.post(Api.answer_callback_query, json=data)
 
 
 @attr.s
