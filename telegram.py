@@ -56,6 +56,7 @@ class Api:
     SEND_DOCUMENT = '/sendDocument'
     GET_FILE = '/getFile'
     ANSWER_CALLBACK_QUERY = '/answerCallbackQuery'
+    EDIT_MESSAGE_REPLY_MARKUP = '/editMessageReplyMarkup'
 
     _api = lambda api: classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
 
@@ -70,6 +71,8 @@ class Api:
     delete_webhook = _api(DELETE_WEBHOOK)
 
     answer_callback_query = _api(ANSWER_CALLBACK_QUERY)
+    edit_message_reply_markup = _api(EDIT_MESSAGE_REPLY_MARKUP)
+
     get_file = _api(GET_FILE)
 
     file_by_file_path = classmethod(lambda cls, file_path: lambda token: '{}/file{}{}'.format(cls.HOST, cls.BOT.format(token=token), '/'+file_path))
@@ -338,6 +341,24 @@ class Bot(User):
         if as_webhook_response:
             raise _AsWebhookResponse(data)
         return self.post(Api.answer_callback_query, json=data)
+
+    @webhook_responsible(Api.EDIT_MESSAGE_REPLY_MARKUP)
+    def edit_message_reply_markup(self, chat: T.Union['Chat', int] = None,
+                                  message: T.Union['Message', int] = None,
+                                  inline_message: int = None,
+                                  markup: 'InlineKeyboardMarkup' = None,
+                                  as_webhook_response=False,
+                                  ):
+        assert inline_message or (chat and message), 'inline_message_id or (chat and message) required'
+        data = self._prepare_value(dict(
+            chat_id=chat,
+            message_id=message,
+            inline_message_id=inline_message,
+            reply_markup=markup,
+        ))
+        if as_webhook_response:
+            raise _AsWebhookResponse(data)
+        return self.post(Api.edit_message_reply_markup, json=data)
 
 
 @attr.s
