@@ -57,6 +57,7 @@ class Api:
     GET_FILE = '/getFile'
     ANSWER_CALLBACK_QUERY = '/answerCallbackQuery'
     EDIT_MESSAGE_REPLY_MARKUP = '/editMessageReplyMarkup'
+    EDIT_MESSAGE_TEXT = '/editMessageText'
 
     _api = lambda api: classmethod(lambda cls, token: cls.HOST + cls.BOT.format(token=token) + api)
 
@@ -72,6 +73,7 @@ class Api:
 
     answer_callback_query = _api(ANSWER_CALLBACK_QUERY)
     edit_message_reply_markup = _api(EDIT_MESSAGE_REPLY_MARKUP)
+    edit_message_text = _api(EDIT_MESSAGE_TEXT)
 
     get_file = _api(GET_FILE)
 
@@ -359,6 +361,32 @@ class Bot(User):
         if as_webhook_response:
             raise _AsWebhookResponse(data)
         return self.post(Api.edit_message_reply_markup, json=data)
+
+    @webhook_responsible(Api.EDIT_MESSAGE_TEXT)
+    def edit_message_text(self, text: str,
+                          parse_mode: T.Optional['Message.ParseMode'] = None,
+                          disable_web_page_preview: bool = None,
+                          chat: T.Union['Chat', int] = None,
+                          message: T.Union['Message', int] = None,
+                          inline_message: int = None,
+                          markup: 'InlineKeyboardMarkup' = None,
+                          as_webhook_response=False,
+                          ):
+        assert inline_message or (chat and message), 'inline_message_id or (chat and message) required'
+        data = self._prepare_value(dict(
+            chat_id=chat,
+            message_id=message,
+            inline_message_id=inline_message,
+            reply_markup=markup,
+            text=text,
+            parse_mode=parse_mode,
+            disable_web_page_preview=disable_web_page_preview,
+        ))
+        if as_webhook_response:
+            raise _AsWebhookResponse(data)
+        return self.post(Api.edit_message_text, json=data)
+
+
 
 
 @attr.s
