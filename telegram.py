@@ -154,6 +154,10 @@ def webhook_responsible(method):
 class Bot(User):
     _api_token = attr.ib(repr=False, kw_only=True)
 
+    can_join_groups = attr.ib(default=None)
+    can_read_all_group_messages = attr.ib(default=None)
+    supports_inline_queries = attr.ib(default=None)
+
     @classmethod
     def by(cls, token) -> 'Bot':
         r = requests.get(Api.me(token), ).json()['result']
