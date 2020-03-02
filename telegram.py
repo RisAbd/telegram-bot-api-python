@@ -721,6 +721,13 @@ class Message(ConverterMixin):
             if e.offset == 0 and e.type == "bot_command":
                 return e.text(self.text)
 
+    @property
+    def bot_command_argument(self):
+        cmd = self.bot_command
+        if cmd is None:
+            self.text
+        return self.text.lstrip(cmd).lstrip()
+
 
 # workaround self referencing converter
 # reply_to_message is Message
