@@ -118,6 +118,7 @@ class WebhookInfo(ConverterMixin):
     url = attr.ib()
     has_custom_certificate = attr.ib()
     pending_update_count = attr.ib()
+    ip_address = attr.ib(default=None)
     last_error_date = attr.ib(default=None)
     last_error_message = attr.ib(default=None)
     max_connections = attr.ib(default=None)
