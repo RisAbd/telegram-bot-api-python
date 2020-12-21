@@ -278,6 +278,7 @@ class Bot(User):
         self,
         url: str,
         certificate=None,
+        ip_address: str = None,
         max_connections: int = None,
         allowed_updates: list = None,
     ) -> bool:
@@ -286,6 +287,7 @@ class Bot(User):
         data = self._prepare_value(
             dict(
                 url=url,
+                ip_address=ip_address,
                 max_connections=max_connections,
                 allowed_updates=allowed_updates,
             )
