@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 _T = T.Type
 
+_cached_fields = dict()
+
 
 def _from(cls: _T, result: T.Union[list, dict, _T], many=False, **kwargs):
     if isinstance(result, cls):
@@ -27,12 +29,15 @@ def _from(cls: _T, result: T.Union[list, dict, _T], many=False, **kwargs):
     # logger.debug('cls=%r, many=%r: %r', cls, many, result)
     if many:
         return list(map(FT.partial(cls.from_, many=False), result))
+    attr_fields = _cached_fields.get(cls) or _cached_fields.setdefault(cls, [f.name for f in attr.fields(cls)])
+    unresolved_fields = [f for f in result if f not in attr_fields and f not in converter_map]
     return cls(
         **{
-            converter_map.get(k, k): v
+            mapped_key: v
             for k, v in result.items()
-            if converter_map.get(k) is not False
+            if (mapped_key := converter_map.get(k, k)) is not False and k not in unresolved_fields
         },
+        _unresolved_attrs={k: result[k] for k in unresolved_fields},
         **kwargs
     )
 
@@ -45,8 +50,9 @@ def from_added(cls):
 
 
 @from_added
+@attr.s(kw_only=True)
 class ConverterMixin:
-    pass
+    _unresolved_attrs = attr.ib(default=None, alias='_unresolved_attrs')
 
 
 class Api:
@@ -171,13 +177,15 @@ def webhook_responsible(method):
     return wow
 
 
-@attr.s(frozen=True)
+@attr.s(frozen=False)
 class Bot(User):
     _api_token = attr.ib(repr=False, kw_only=True)
 
     can_join_groups = attr.ib(default=None)
     can_read_all_group_messages = attr.ib(default=None)
     supports_inline_queries = attr.ib(default=None)
+
+    _last_response = attr.ib(default=None)
 
     @classmethod
     def by(cls, token) -> "Bot":
@@ -192,6 +200,7 @@ class Bot(User):
         if _raw_return:
             return r
         j = r.json()
+        self._last_response = j
         logger.debug("%r", j)
         if not j["ok"]:
             Error.from_(j).raise_()
@@ -494,6 +503,7 @@ class File(ConverterMixin):
 @attr.s
 class PhotoSize(ConverterMixin):
     file_id = attr.ib()
+    file_unique_id = attr.ib()
     width = attr.ib()
     height = attr.ib()
     file_size = attr.ib(default=None)
@@ -514,12 +524,14 @@ class Document(ConverterMixin):
 @attr.s
 class Audio(ConverterMixin):
     file_id = attr.ib()
+    file_unique_id = attr.ib()
     duration = attr.ib()
     performer = attr.ib(default=None)
     title = attr.ib(default=None)
-    thumb = attr.ib(default=None, converter=Thumb.c_opt)
+    file_name = attr.ib(default=None)
     mime_type = attr.ib(default=None)
     file_size = attr.ib(default=None)
+    thumb = attr.ib(default=None, converter=Thumb.c_opt)
 
 
 @attr.s
@@ -552,7 +564,9 @@ class MessageEntity(ConverterMixin):
     offset = attr.ib()
     length = attr.ib()
     url = attr.ib(default=None)
-    user = attr.ib(default=None)
+    user = attr.ib(default=None, converter=User.c_opt)
+    language = attr.ib(default=None)
+    custom_emoji_id = attr.ib(default=None)
 
     def text(self, message: T.Union[str, "Message"]) -> str:
         if isinstance(message, Message):
@@ -765,16 +779,20 @@ class Update(ConverterMixin):
     id = attr.ib()
     message = attr.ib(default=None, converter=Message.c_opt)
     edited_message = attr.ib(default=None, converter=Message.c_opt)
-    channel_post = attr.ib(default=None)
-    edited_channel_post = attr.ib(default=None)
+    channel_post = attr.ib(default=None, converter=Message.c_opt)
+    edited_channel_post = attr.ib(default=None, converter=Message.c_opt)
     inline_query = attr.ib(default=None)
     chosen_inline_result = attr.ib(default=None)
     callback_query = attr.ib(default=None, converter=CallbackQuery.c_opt)
     shipping_query = attr.ib(default=None)
     pre_checkout_query = attr.ib(default=None)
+    poll = attr.ib(default=None)
+    poll_answer = attr.ib(default=None)
+    my_chat_member = attr.ib(default=None)
+    chat_member = attr.ib(default=None)
+    chat_join_request = attr.ib(default=None)
 
     class Type(enum.Enum):
-
         MESSAGE = "message"
         EDITED_MESSAGE = "edited_message"
         CHANNEL_POST = "channel_post"
@@ -784,6 +802,11 @@ class Update(ConverterMixin):
         CALLBACK_QUERY = "callback_query"
         SHIPPING_QUERY = "shipping_query"
         PRE_CHECKOUT_QUERY = "pre_checkout_query"
+        POLL = "poll"
+        POLL_ANSWER = "poll_answer"
+        MY_CHAT_MEMBER = "my_chat_member"
+        CHAT_MEMBER = "chat_member"
+        CHAT_JOIN_REQUEST = "chat_join_request"
 
     @property
     def type(self) -> Type:
