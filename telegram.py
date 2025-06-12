@@ -107,6 +107,10 @@ class APIException(BaseAPIException):
     pass
 
 
+class CallbackQueryExpired(APIException):
+    _TG_DESCRIPTION = 'Bad Request: query is too old and response timeout expired or query ID is invalid'
+
+
 @attr.s
 class Error(ConverterMixin):
     converter_map = dict(ok=False)
@@ -436,7 +440,13 @@ class Bot(User):
         )
         if as_webhook_response:
             raise _AsWebhookResponse(data)
-        return self.post(Api.answer_callback_query, json=data)
+        try:
+            return self.post(Api.answer_callback_query, json=data)
+        except APIException as e:
+            (error, ) = e.args
+            if error.description == CallbackQueryExpired._TG_DESCRIPTION:
+                raise CallbackQueryExpired(error) from e
+            raise e
 
     @webhook_responsible(Api.EDIT_MESSAGE_REPLY_MARKUP)
     def edit_message_reply_markup(
