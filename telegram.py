@@ -460,7 +460,8 @@ class Bot(User):
         )
         if as_webhook_response:
             raise _AsWebhookResponse(data)
-        return self.post(Api.edit_message_reply_markup, json=data)
+        resp = self.post(Api.edit_message_reply_markup, json=data)
+        return Message.from_(resp)
 
     @webhook_responsible(Api.EDIT_MESSAGE_TEXT)
     def edit_message_text(
@@ -490,7 +491,8 @@ class Bot(User):
         )
         if as_webhook_response:
             raise _AsWebhookResponse(data)
-        return self.post(Api.edit_message_text, json=data)
+        resp = self.post(Api.edit_message_text, json=data)
+        return Message.from_(resp)
 
 
 @attr.s
@@ -730,6 +732,7 @@ class Message(ConverterMixin):
 
     class ParseMode(enum.Enum):
         MARKDOWN = "Markdown"
+        MARKDOWN_V2 = "MarkdownV2"
         HTML = "HTML"
 
     @property
