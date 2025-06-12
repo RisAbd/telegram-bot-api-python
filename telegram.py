@@ -752,6 +752,7 @@ class Message(ConverterMixin):
 # workaround self referencing converter
 # reply_to_message is Message
 Message.reply_to_message = attr.ib(default=None, converter=Message.c_opt)
+Message.pinned_message = attr.ib(default=None, converter=Message.c_opt)
 Message = attr.s(Message)
 
 
