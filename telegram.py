@@ -111,6 +111,10 @@ class CallbackQueryExpired(APIException):
     _TG_DESCRIPTION = 'Bad Request: query is too old and response timeout expired or query ID is invalid'
 
 
+class MessageTooLong(APIException):
+    _TG_DESCRIPTION = 'Bad Request: message is too long'
+
+
 @attr.s
 class Error(ConverterMixin):
     converter_map = dict(ok=False)
@@ -361,7 +365,13 @@ class Bot(User):
         if as_webhook_response:
             raise _AsWebhookResponse(data)
 
-        res = self.post(Api.send_message, json=data)
+        try:
+            res = self.post(Api.send_message, json=data)
+        except APIException as e:
+            (error, ) = e.args
+            if error.description == MessageTooLong._TG_DESCRIPTION:
+                raise MessageTooLong(error) from e
+            raise e
         return Message.from_(res)
 
     @webhook_responsible(Api.SEND_CHAT_ACTION)
@@ -508,42 +518,55 @@ class Bot(User):
 @attr.s
 class File(ConverterMixin):
     file_id = attr.ib()
+    file_unique_id = attr.ib()
     file_size = attr.ib(default=None)
     file_path = attr.ib(default=None)
 
 
 @attr.s
-class PhotoSize(ConverterMixin):
+class FileLike(ConverterMixin):
     file_id = attr.ib()
     file_unique_id = attr.ib()
+    file_size = attr.ib()
+
+
+@attr.s
+class PhotoSize(FileLike):
     width = attr.ib()
     height = attr.ib()
-    file_size = attr.ib(default=None)
 
 
 Thumb = PhotoSize
 
 
 @attr.s
-class Document(ConverterMixin):
-    file_id = attr.ib()
-    thumb = attr.ib(default=None, converter=Thumb.c_opt)
+class Document(FileLike):
+    thumbnail = attr.ib(default=None, converter=Thumb.c_opt)
     file_name = attr.ib(default=None)
     mime_type = attr.ib(default=None)
-    file_size = attr.ib(default=None)
+    file_path = attr.ib(default=None)
 
 
 @attr.s
-class Audio(ConverterMixin):
-    file_id = attr.ib()
-    file_unique_id = attr.ib()
+class Audio(FileLike):
     duration = attr.ib()
+    file_name = attr.ib(default=None)
     performer = attr.ib(default=None)
     title = attr.ib(default=None)
+    mime_type = attr.ib(default=None)
+    thumb = attr.ib(default=None, converter=Thumb.c_opt)
+
+
+@attr.s
+class Video(FileLike):
+    duration = attr.ib()
+    width = attr.ib()
+    height = attr.ib()
     file_name = attr.ib(default=None)
     mime_type = attr.ib(default=None)
-    file_size = attr.ib(default=None)
-    thumb = attr.ib(default=None, converter=Thumb.c_opt)
+    start_timestamp = attr.ib(default=None)
+    thumbnail = thumb = attr.ib(default=None, converter=Thumb.c_opt)
+    cover = attr.ib(factory=list, converter=PhotoSize.list)
 
 
 @attr.s
@@ -726,6 +749,10 @@ class Message(ConverterMixin):
     from_ = attr.ib(default=None, converter=User.c_opt)
     entities = attr.ib(factory=list, converter=MessageEntity.list)
 
+    photo = attr.ib(factory=list, converter=PhotoSize.list)
+
+    video = attr.ib(default=None, converter=Video.c_opt)
+
     caption = attr.ib(default=None)
     caption_entities = attr.ib(factory=list, converter=MessageEntity.list)
 
@@ -747,16 +774,20 @@ class Message(ConverterMixin):
 
     @property
     def bot_command(self) -> T.Optional[str]:
-        for e in self.entities:
-            if e.offset == 0 and e.type == "bot_command":
-                return e.text(self.text)
+        for text, entities in ((self.text, self.entities), (self.caption, self.caption_entities)):
+            for e in entities:
+                if e.offset == 0 and e.type == "bot_command":
+                    return e.text(text)
 
     @property
     def bot_command_argument(self):
         cmd = self.bot_command
         if cmd is None:
-            self.text
-        return self.text.lstrip(cmd).lstrip()
+            return
+        for text, entities in ((self.text, self.entities), (self.caption, self.caption_entities)):
+            for e in entities:
+                if e.offset == 0 and e.type == "bot_command" and e.text(text) == cmd:  # todo: do we really need this check?
+                    return text.lstrip(cmd).lstrip()
 
 
 # workaround self referencing converter
