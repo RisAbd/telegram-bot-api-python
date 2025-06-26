@@ -104,7 +104,16 @@ class BaseAPIException(BaseException):
 
 
 class APIException(BaseAPIException):
-    pass
+    def __init__(self, tg_error: 'Error', request=None):
+        super().__init__(tg_error)
+        self.tg_error = tg_error
+        self.request = request
+
+    def __str__(self):
+        s = super().__str__()
+        if self.request:
+            s += f' request was: {self.request!r}'
+        return s
 
 
 class CallbackQueryExpired(APIException):
@@ -123,8 +132,8 @@ class Error(ConverterMixin):
     error_code = attr.ib()
     parameters = attr.ib(default=None)
 
-    def raise_(self):
-        raise APIException(self)
+    def raise_(self, **kwargs):
+        raise APIException(self, **kwargs)
 
 
 @attr.s
@@ -211,7 +220,7 @@ class Bot(User):
         self._last_response = j
         logger.debug("%r", j)
         if not j["ok"]:
-            Error.from_(j).raise_()
+            Error.from_(j).raise_(request=dict(url=url, method=method, **kwargs))
         return j["result"]
 
     def get(self, url_builder, **kwargs):
